@@ -1,0 +1,230 @@
+---
+title: "Ex2 - Titanic"
+author: "Yariv Dahan & Maayan Matook"
+date: "May 7, 2017"
+output: github_document
+---
+
+
+
+set a working directory
+```{r}
+setwd('C:\\Users\\yariv\\Documents\\GitHub\\ex2')
+```
+
+Read the train.csv and test.csv files into dataframes
+```{r}
+df.train <- read.csv("train.csv",na.strings = "")
+df.test <- read.csv('test.csv',na.strings = "")
+```
+
+binding the dfs together in order to do feature engineering
+```{r}
+df.test$Survived <- NA
+df.all <- rbind(df.train, df.test)
+```
+
+##preprocessing and feature engineering
+changing some columns from string to factor
+```{r}
+df.all$Survived<- as.factor(df.all$Survived)
+df.all$Pclass<- as.factor(df.all$Pclass)
+```
+
+getting honorific abbreviations (title) out of the name
+```{r}
+library(stringr)
+df.all$Name<-str_split_fixed(df.all$Name, ", ", 2)[,2]
+df.all$Name<-str_split_fixed(df.all$Name, ". ", 2)[,1]
+df.all$Name[df.all$Name %in% c('Don', 'Major', 'Capt', 'Jonkheer', 'Rev', 'Col')] <- 'Sir'
+df.all$Name[df.all$Name %in% c('Countess', 'Mme', 'Dona')] <- 'Mrs'
+df.all$Name[df.all$Name %in% c('Mlle', 'Ms')] <- 'Miss'
+colnames(df.all)[4] <- "Title"
+df.all$Title<- as.factor(df.all$Title)
+table(df.all$Title)
+```
+
+extract the cabin level from "Cabin"
+```{r}
+df.all$Cabin<-strtrim(df.all$Cabin, 1)
+colnames(df.all)[11] <- "CabinLevel"
+df.all$CabinLevel<- as.factor(df.all$CabinLevel)
+```
+
+calculating family size
+```{r}
+df.all$FamilySize <- df.all$SibSp + df.all$Parch + 1
+```
+
+we want to replce NAs with a value (prediction)
+```{r}
+library('rpart')
+
+#for age
+Agefit <- rpart(Age ~ Pclass + Sex + SibSp + Parch + Fare + Embarked + Title + FamilySize,
+                  data=df.all[!is.na(df.all$Age),], 
+                  method="anova")
+df.all$Age[is.na(df.all$Age)] <- predict(Agefit, df.all[is.na(df.all$Age),])
+
+#for embarked
+Embarkedfit <- rpart(Embarked ~ Pclass + Sex + Fare + Age + Title + FamilySize,
+                  data=df.all[!is.na(df.all$Embarked),], 
+                  method="class")
+df.all$Embarked[is.na(df.all$Embarked)] <- predict(Embarkedfit, df.all[is.na(df.all$Embarked),], type = "class")
+
+#for CabinLevel
+CabinLevelfit <- rpart(CabinLevel ~ Pclass + Sex + Fare + Age + Title + FamilySize + Embarked,
+                  data=df.all[!is.na(df.all$CabinLevel),], 
+                  method="class")
+df.all$CabinLevel[is.na(df.all$CabinLevel)] <- predict(CabinLevelfit, df.all[is.na(df.all$CabinLevel),], type = "class")
+```
+
+we will check if the passenger is under 18 (0 = yes). it will be done after replacing NAs with values
+```{r}
+df.all$Child <- 0
+df.all$Child[df.all$Age < 18] <- 1
+```
+
+we will remove all the rows that have NA in $Fare (only one row)
+```{r}
+df.all$Fare[which(is.na(df.all$Fare))] <- median(df.all$Fare, na.rm=TRUE)
+```
+
+erasing some irrelevant columns
+```{r}
+df.all <- df.all[,-c(1,9)]
+```
+
+this is our final data
+```{r}
+summary(df.all)
+```
+
+splitting df.all to df.train and df.test:
+```{r}
+#get the test passenger's ids 
+ids<- df.test$PassengerId
+
+df.train <- df.all[1:891,]
+df.test <- df.all[892:1309,]
+```
+now we have a processed data.
+
+##looking at the data:
+divide the features' names to numerics and factors:
+```{r}
+cols<- 1:dim(df.train)[2]
+factors <- cols[sapply(df.train,is.factor)]
+numerics <- cols[!sapply(df.train,is.factor)]
+```
+
+
+We now tide the data two times: the first is for categorial data and the second for numeric data.
+
+```{r}
+#install.packages("tidyr")
+library(tidyr)
+df_tidy_factors<-gather(df.train[,factors],"feature","value",-1)
+df_tidy_numerics<-gather(cbind(Survived=df.train[,1],df.train[,numerics]),"feature","value",-1)
+
+```
+
+
+Finally, we can plot. The first plot describes only categorical features (factors). 
+Notice that the *scales* parameter was set to "free" to enable a suitable scaling for each facet (otherwise it is hard to view some of the facets, that need much smaller scales). We use the *facet_grid* that accepts a *scales* parameter.
+
+```{r}
+#install.packages("ggplot2")
+library(ggplot2)
+qplot(x=value,data=df_tidy_factors,fill=Survived) + facet_grid(~feature,scales="free")
+```
+
+
+One more plot for numeric features:
+```{r}
+qplot(x=value,data=df_tidy_numerics,fill=Survived) + facet_grid(~feature,scales="free")
+```
+
+#building predictions:
+
+##first try - c50 with caret:
+```{r}
+##install.packages("caret")
+library(caret)
+set.seed(123)
+control <- trainControl(method="cv", number=10, repeats=1)
+fit.c50 <- train(Survived~., data=df.train, method="C5.0", metric="Accuracy", trControl=control, na.action = na.pass)
+fit.c50
+```
+
+
+```{r}
+pred.c50<- predict(fit.c50,df.test,na.action = na.pass)
+res.c50 <- cbind(PassengerId=ids,Survived=as.character(pred.c50))
+write.csv(res.c50,file="pred_c50.csv",row.names = F)
+```
+![First try](a.png)
+
+##second try - random forest:
+
+```{r}
+#install.packages('randomForest')
+library(randomForest)
+fit.rf <- randomForest(Survived ~., data=df.train, importance=TRUE, ntree=2000)
+
+#the important vars:
+varImpPlot(fit.rf)
+
+pred.rf<- predict(fit.rf,df.test,na.action = na.pass)
+
+res.rf <- cbind(PassengerId=ids,Survived=as.character(pred.rf))
+write.csv(res.rf,file="pred_rf.csv",row.names = F)
+```
+![second try](b.png)
+
+##third try - rpart:
+
+```{r}
+fit.rpart <-rpart(Survived ~., data=df.train)
+
+pred.rpart<- predict(fit.rpart,df.test,na.action = na.pass)
+pred.rpart[pred.rpart<=0.5] <- 0
+pred.rpart[pred.rpart>0.5] <- 1
+
+res.rpart <- cbind(PassengerId=ids,Survived=as.character(pred.rpart))
+write.csv(res.rpart,file="pred_rpart.csv",row.names = F)
+```
+![third try](c.png)
+##fourth try - ensemble:
+
+```{r}
+#install.packages("caretEnsemble")
+
+library(caretEnsemble)
+control <-  trainControl(method = "cv", number = 5, savePredictions = 'final', classProbs = TRUE, summaryFunction = twoClassSummary, index=createFolds(df.train$Survived, 10))
+models<-caretList( make.names(Survived) ~ .,  data = df.train, trControl = control, metric = "accuracy",
+                   tuneList = list(
+                     C50 = caretModelSpec( method = "C5.0", 
+                                           tuneGrid = data.frame(.trials = 2, .model = 'tree', .winnow = TRUE)),
+                     xgbLinear = caretModelSpec(method = "xgbLinear",
+                                              tuneGrid = data.frame(.nrounds = 2, .lambda = 0.3, .alpha = 0.1, .eta = 0.15)
+                   )
+  )
+)
+
+results <- resamples(models)
+summary(results)
+
+# correlation between results
+modelCor(results)
+
+pred.ensemble<- predict(models,df.test,na.action = na.pass)
+pred.ensemble[pred.rpart<=0.5] <- 0
+pred.ensemble[pred.rpart>0.5] <- 1
+
+res.ensemble <- cbind(PassengerId=ids,Survived=as.character(pred.ensemble))
+write.csv(res.ensemble,file="pred_ensemble.csv",row.names = F)
+```
+![fourth try](d.png)
+
+
