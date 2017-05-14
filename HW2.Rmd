@@ -163,7 +163,7 @@ pred.c50<- predict(fit.c50,df.test,na.action = na.pass)
 res.c50 <- cbind(PassengerId=ids,Survived=as.character(pred.c50))
 write.csv(res.c50,file="pred_c50.csv",row.names = F)
 ```
-![First try](a.png)
+![First try](a.PNG)
 
 ##second try - random forest:
 
@@ -180,7 +180,7 @@ pred.rf<- predict(fit.rf,df.test,na.action = na.pass)
 res.rf <- cbind(PassengerId=ids,Survived=as.character(pred.rf))
 write.csv(res.rf,file="pred_rf.csv",row.names = F)
 ```
-![second try](b.png)
+![second try](b.PNG)
 
 ##third try - rpart:
 
@@ -194,7 +194,7 @@ pred.rpart[pred.rpart>0.5] <- 1
 res.rpart <- cbind(PassengerId=ids,Survived=as.character(pred.rpart))
 write.csv(res.rpart,file="pred_rpart.csv",row.names = F)
 ```
-![third try](c.png)
+![third try](c.PNG)
 ##fourth try - ensemble:
 
 ```{r}
@@ -225,6 +225,6 @@ pred.ensemble[pred.rpart>0.5] <- 1
 res.ensemble <- cbind(PassengerId=ids,Survived=as.character(pred.ensemble))
 write.csv(res.ensemble,file="pred_ensemble.csv",row.names = F)
 ```
-![fourth try](d.png)
+![fourth try](d.PNG)
 
 
